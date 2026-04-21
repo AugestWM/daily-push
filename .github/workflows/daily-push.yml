@@ -24,8 +24,8 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.GOLD_API_KEY }}")
           echo "$NEWS_RESPONSE" > news.json
           NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[]?.title' | head -5)
-          # 将换行符替换为微信支持的 \n 字面量
-          NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ' | sed ':a;N;$!ba;s/\n/\\n/g')
+          # 添加序号，并用字面量 \n 替换真实换行符
+          NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
           echo "news=$NEWS_FORMATTED" >> $GITHUB_OUTPUT
 
       - name: Get Access Token
