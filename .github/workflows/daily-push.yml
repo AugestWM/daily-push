@@ -2,8 +2,8 @@ name: Daily Push
 
 on:
   schedule:
-    - cron: '0 1 * * *'
-  workflow_dispatch:
+    - cron: '0 1 * * *'  # 每天UTC时间1点执行（北京时间9点）
+  workflow_dispatch:      # 允许手动触发
 
 jobs:
   push:
@@ -14,17 +14,20 @@ jobs:
         run: |
           GOLD_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/goldprice')
           echo "$GOLD_RESPONSE" > gold.json
-          GOLD_PRICE=$(echo "$GOLD_RESPONSE" | jq -r '.data.precious_metal_price[0].gold_price // "暂无"')
+          
+          # 🔧 修改：提取建设银行龙鼎金条的价格
+          # 从 bank_gold_bar_price 数组中筛选 bank 字段为 "建设银行龙鼎金条" 的项，取 price
+          GOLD_PRICE=$(echo "$GOLD_RESPONSE" | jq -r '.data.bank_gold_bar_price[] | select(.bank=="建设银行龙鼎金条") | .price // "暂无"')
           echo "gold_price=$GOLD_PRICE" >> $GITHUB_OUTPUT
 
       - name: Get News
         id: news
         run: |
           NEWS_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/toutiaohot' \
-            -H 'Authorization: Bearer ${{ secrets.GOLD_API_KEY }}')
+            -H "Authorization: Bearer ${{ secrets.GOLD_API_KEY }}")
           echo "$NEWS_RESPONSE" > news.json
           
-          NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[:5] | .[] | .title' | head -5)
+          NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[]?.title' | head -5)
           NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ')
           echo "news=$NEWS_FORMATTED" >> $GITHUB_OUTPUT
 
