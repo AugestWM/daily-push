@@ -1,0 +1,54 @@
+name: Daily Push
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Gold Price
+        id: gold
+        run: |
+          GOLD_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/goldprice')
+          echo "$GOLD_RESPONSE" > gold.json
+          GOLD_PRICE=$(echo "$GOLD_RESPONSE" | jq -r '.data.precious_metal_price[0].gold_price // "暂无"')
+          echo "gold_price=$GOLD_PRICE" >> $GITHUB_OUTPUT
+
+      - name: Get News
+        id: news
+        run: |
+          NEWS_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/toutiaohot' \
+            -H 'Authorization: Bearer ${{ secrets.GOLD_API_KEY }}')
+          echo "$NEWS_RESPONSE" > news.json
+          
+          NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[:5] | .[] | .title' | head -5)
+          NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ')
+          echo "news=$NEWS_FORMATTED" >> $GITHUB_OUTPUT
+
+      - name: Get Access Token
+        id: token
+        run: |
+          TOKEN_RESPONSE=$(curl -s "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${{ secrets.WECHAT_APPID }}&secret=${{ secrets.WECHAT_SECRET }}")
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
+          echo "token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Send Template Message
+        run: |
+          GOLD_PRICE="${{ steps.gold.outputs.gold_price }}"
+          NEWS="${{ steps.news.outputs.news }}"
+          
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "touser": "${{ secrets.WECHAT_OPENID }}",
+              "template_id": "${{ secrets.WECHAT_TEMPLATE_ID }}",
+              "data": {
+                "first": {"value": "每日简报", "color": "#173177"},
+                "keyword1": {"value": "'"$GOLD_PRICE"'元/克", "color": "#FF0000"},
+                "keyword2": {"value": "'"$NEWS"'"},
+                "remark": {"value": "祝你生活愉快！"}
+              }
+            }'
