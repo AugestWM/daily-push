@@ -23,10 +23,30 @@ jobs:
           NEWS_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/toutiaohot' \
             -H "Authorization: Bearer ${{ secrets.GOLD_API_KEY }}")
           echo "$NEWS_RESPONSE" > news.json
-          NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[]?.title' | head -5)
-          # 添加序号，并用字面量 \n 替换真实换行符
-          NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+          
+          # 调试：打印原始响应
+          echo "=== API Response ==="
+          echo "$NEWS_RESPONSE" | jq '.'
+          
+          # 检查 code 是否成功
+          CODE=$(echo "$NEWS_RESPONSE" | jq -r '.code // 0')
+          if [ "$CODE" != "200" ]; then
+            echo "API 返回错误，code: $CODE, msg: $(echo "$NEWS_RESPONSE" | jq -r '.msg')"
+            NEWS_FORMATTED="今日无热点新闻"
+          else
+            # 提取前5条标题
+            NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[]?.title' | head -5)
+            if [ -z "$NEWS_LIST" ]; then
+              NEWS_FORMATTED="暂无热点新闻"
+            else
+              # 添加序号，用换行分隔
+              NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
+            fi
+          fi
+          
           echo "news=$NEWS_FORMATTED" >> $GITHUB_OUTPUT
+          echo "=== NEWS_FORMATTED ==="
+          echo "$NEWS_FORMATTED"
 
       - name: Get Access Token
         id: token
@@ -39,6 +59,10 @@ jobs:
         run: |
           GOLD_PRICE="${{ steps.gold.outputs.gold_price }}"
           NEWS="${{ steps.news.outputs.news }}"
+          
+          echo "=== 最终发送的内容 ==="
+          echo "金价: $GOLD_PRICE"
+          echo "新闻: $NEWS"
           
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
