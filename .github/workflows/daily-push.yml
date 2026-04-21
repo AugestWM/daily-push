@@ -2,8 +2,8 @@ name: Daily Push
 
 on:
   schedule:
-    - cron: '0 1 * * *'  # 每天UTC时间1点执行（北京时间9点）
-  workflow_dispatch:      # 允许手动触发
+    - cron: '0 1 * * *'
+  workflow_dispatch:
 
 jobs:
   push:
@@ -14,9 +14,6 @@ jobs:
         run: |
           GOLD_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/goldprice')
           echo "$GOLD_RESPONSE" > gold.json
-          
-          # 🔧 修改：提取建设银行龙鼎金条的价格
-          # 从 bank_gold_bar_price 数组中筛选 bank 字段为 "建设银行龙鼎金条" 的项，取 price
           GOLD_PRICE=$(echo "$GOLD_RESPONSE" | jq -r '.data.bank_gold_bar_price[] | select(.bank=="建设银行龙鼎金条") | .price // "暂无"')
           echo "gold_price=$GOLD_PRICE" >> $GITHUB_OUTPUT
 
@@ -26,9 +23,9 @@ jobs:
           NEWS_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/toutiaohot' \
             -H "Authorization: Bearer ${{ secrets.GOLD_API_KEY }}")
           echo "$NEWS_RESPONSE" > news.json
-          
           NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[]?.title' | head -5)
-          NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ')
+          # 将换行符替换为微信支持的 \n 字面量
+          NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ' | sed ':a;N;$!ba;s/\n/\\n/g')
           echo "news=$NEWS_FORMATTED" >> $GITHUB_OUTPUT
 
       - name: Get Access Token
@@ -45,13 +42,18 @@ jobs:
           
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
-            -d '{
-              "touser": "${{ secrets.WECHAT_OPENID }}",
-              "template_id": "${{ secrets.WECHAT_TEMPLATE_ID }}",
-              "data": {
-                "first": {"value": "每日简报", "color": "#173177"},
-                "keyword1": {"value": "'"$GOLD_PRICE"'元/克", "color": "#FF0000"},
-                "keyword2": {"value": "'"$NEWS"'"},
-                "remark": {"value": "祝你生活愉快！"}
-              }
-            }'
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg gold_price "$GOLD_PRICE 元/克" \
+              --arg news "$NEWS" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "每日简报", color: "#173177" },
+                  keyword1: { value: $gold_price, color: "#FF0000" },
+                  keyword2: { value: $news },
+                  remark: { value: "祝你生活愉快！" }
+                }
+              }')"
