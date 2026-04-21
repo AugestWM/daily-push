@@ -15,7 +15,9 @@ jobs:
           GOLD_RESPONSE=$(curl -s -X GET 'https://v2.xxapi.cn/api/goldprice')
           echo "$GOLD_RESPONSE" > gold.json
           GOLD_PRICE=$(echo "$GOLD_RESPONSE" | jq -r '.data.bank_gold_bar_price[] | select(.bank=="建设银行龙鼎金条") | .price // "暂无"')
+          UPDATE_DATE=$(echo "$GOLD_RESPONSE" | jq -r '.data.precious_metal_price[0].updated_date // "未知"')
           echo "gold_price=$GOLD_PRICE" >> $GITHUB_OUTPUT
+          echo "update_date=$UPDATE_DATE" >> $GITHUB_OUTPUT
 
       - name: Get News
         id: news
@@ -26,13 +28,19 @@ jobs:
           
           CODE=$(echo "$NEWS_RESPONSE" | jq -r '.code // 0')
           if [ "$CODE" != "200" ]; then
-            echo "news1=今日无热点新闻" >> $GITHUB_OUTPUT
+            echo "news1_title=今日无热点新闻" >> $GITHUB_OUTPUT
+            echo "news1_url=" >> $GITHUB_OUTPUT
           else
-            # 提取前6条新闻标题
+            # 提取前6条新闻的标题和链接
             for i in 1 2 3 4 5 6; do
               TITLE=$(echo "$NEWS_RESPONSE" | jq -r ".data[$((i-1))].title // \"\"")
+              URL=$(echo "$NEWS_RESPONSE" | jq -r ".data[$((i-1))].url // \"\"")
               if [ -n "$TITLE" ]; then
-                echo "news$i=$TITLE" >> $GITHUB_OUTPUT
+                echo "news${i}_title=$TITLE" >> $GITHUB_OUTPUT
+                echo "news${i}_url=$URL" >> $GITHUB_OUTPUT
+              else
+                echo "news${i}_title=" >> $GITHUB_OUTPUT
+                echo "news${i}_url=" >> $GITHUB_OUTPUT
               fi
             done
           fi
@@ -44,143 +52,153 @@ jobs:
           ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
           echo "token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
 
+      # ========== 发送金价消息（模板1） ==========
       - name: Send Gold Price Message
         run: |
           GOLD_PRICE="${{ steps.gold.outputs.gold_price }}"
+          UPDATE_DATE="${{ steps.gold.outputs.update_date }}"
           
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg template_id "${{ secrets.WECHAT_GOLD_TEMPLATE_ID }}" \
               --arg gold_price "$GOLD_PRICE 元/克" \
+              --arg update_date "$UPDATE_DATE" \
               '{
                 touser: $touser,
                 template_id: $template_id,
                 data: {
-                  first: { value: "每日金价", color: "#173177" },
+                  first: { value: "💰 每日金价简报", color: "#173177" },
                   keyword1: { value: $gold_price, color: "#FF0000" },
-                  keyword2: { value: " " },
-                  remark: { value: "数据来自xxAPI" }
+                  keyword2: { value: $update_date, color: "#888888" },
+                  remark: { value: "数据来源：建设银行投资金条", color: "#173177" }
                 }
               }')"
 
+      # ========== 发送新闻消息（模板2，支持点击跳转） ==========
       - name: Send News 1
-        if: steps.news.outputs.news1 != ''
+        if: steps.news.outputs.news1_title != '' && steps.news.outputs.news1_title != '今日无热点新闻'
         run: |
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
-              --arg news "${{ steps.news.outputs.news1 }}" \
+              --arg template_id "${{ secrets.WECHAT_NEWS_TEMPLATE_ID }}" \
+              --arg title "${{ steps.news.outputs.news1_title }}" \
+              --arg url "${{ steps.news.outputs.news1_url }}" \
               '{
                 touser: $touser,
                 template_id: $template_id,
+                url: $url,
                 data: {
-                  first: { value: "头条热榜 1/6", color: "#173177" },
-                  keyword1: { value: " " },
-                  keyword2: { value: $news },
-                  remark: { value: " " }
+                  first: { value: "📰 热点新闻 1/6", color: "#173177" },
+                  keyword1: { value: $title, color: "#000000" },
+                  remark: { value: "点击查看详情 →", color: "#888888" }
                 }
               }')"
 
       - name: Send News 2
-        if: steps.news.outputs.news2 != ''
+        if: steps.news.outputs.news2_title != ''
         run: |
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
-              --arg news "${{ steps.news.outputs.news2 }}" \
+              --arg template_id "${{ secrets.WECHAT_NEWS_TEMPLATE_ID }}" \
+              --arg title "${{ steps.news.outputs.news2_title }}" \
+              --arg url "${{ steps.news.outputs.news2_url }}" \
               '{
                 touser: $touser,
                 template_id: $template_id,
+                url: $url,
                 data: {
-                  first: { value: "头条热榜 2/6", color: "#173177" },
-                  keyword1: { value: " " },
-                  keyword2: { value: $news },
-                  remark: { value: " " }
+                  first: { value: "📰 热点新闻 2/6", color: "#173177" },
+                  keyword1: { value: $title, color: "#000000" },
+                  remark: { value: "点击查看详情 →", color: "#888888" }
                 }
               }')"
 
       - name: Send News 3
-        if: steps.news.outputs.news3 != ''
+        if: steps.news.outputs.news3_title != ''
         run: |
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
-              --arg news "${{ steps.news.outputs.news3 }}" \
+              --arg template_id "${{ secrets.WECHAT_NEWS_TEMPLATE_ID }}" \
+              --arg title "${{ steps.news.outputs.news3_title }}" \
+              --arg url "${{ steps.news.outputs.news3_url }}" \
               '{
                 touser: $touser,
                 template_id: $template_id,
+                url: $url,
                 data: {
-                  first: { value: "头条热榜 3/6", color: "#173177" },
-                  keyword1: { value: " " },
-                  keyword2: { value: $news },
-                  remark: { value: " " }
+                  first: { value: "📰 热点新闻 3/6", color: "#173177" },
+                  keyword1: { value: $title, color: "#000000" },
+                  remark: { value: "点击查看详情 →", color: "#888888" }
                 }
               }')"
 
       - name: Send News 4
-        if: steps.news.outputs.news4 != ''
+        if: steps.news.outputs.news4_title != ''
         run: |
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
-              --arg news "${{ steps.news.outputs.news4 }}" \
+              --arg template_id "${{ secrets.WECHAT_NEWS_TEMPLATE_ID }}" \
+              --arg title "${{ steps.news.outputs.news4_title }}" \
+              --arg url "${{ steps.news.outputs.news4_url }}" \
               '{
                 touser: $touser,
                 template_id: $template_id,
+                url: $url,
                 data: {
-                  first: { value: "头条热榜 4/6", color: "#173177" },
-                  keyword1: { value: " " },
-                  keyword2: { value: $news },
-                  remark: { value: " " }
+                  first: { value: "📰 热点新闻 4/6", color: "#173177" },
+                  keyword1: { value: $title, color: "#000000" },
+                  remark: { value: "点击查看详情 →", color: "#888888" }
                 }
               }')"
 
       - name: Send News 5
-        if: steps.news.outputs.news5 != ''
+        if: steps.news.outputs.news5_title != ''
         run: |
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
-              --arg news "${{ steps.news.outputs.news5 }}" \
+              --arg template_id "${{ secrets.WECHAT_NEWS_TEMPLATE_ID }}" \
+              --arg title "${{ steps.news.outputs.news5_title }}" \
+              --arg url "${{ steps.news.outputs.news5_url }}" \
               '{
                 touser: $touser,
                 template_id: $template_id,
+                url: $url,
                 data: {
-                  first: { value: "头条热榜 5/6", color: "#173177" },
-                  keyword1: { value: " " },
-                  keyword2: { value: $news },
-                  remark: { value: " " }
+                  first: { value: "📰 热点新闻 5/6", color: "#173177" },
+                  keyword1: { value: $title, color: "#000000" },
+                  remark: { value: "点击查看详情 →", color: "#888888" }
                 }
               }')"
 
       - name: Send News 6
-        if: steps.news.outputs.news6 != ''
+        if: steps.news.outputs.news6_title != ''
         run: |
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
             -d "$(jq -n \
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
-              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
-              --arg news "${{ steps.news.outputs.news6 }}" \
+              --arg template_id "${{ secrets.WECHAT_NEWS_TEMPLATE_ID }}" \
+              --arg title "${{ steps.news.outputs.news6_title }}" \
+              --arg url "${{ steps.news.outputs.news6_url }}" \
               '{
                 touser: $touser,
                 template_id: $template_id,
+                url: $url,
                 data: {
-                  first: { value: "头条热榜 6/6", color: "#173177" },
-                  keyword1: { value: " " },
-                  keyword2: { value: $news },
-                  remark: { value: " " }
+                  first: { value: "📰 热点新闻 6/6", color: "#173177" },
+                  keyword1: { value: $title, color: "#000000" },
+                  remark: { value: "点击查看详情 →", color: "#888888" }
                 }
               }')"
