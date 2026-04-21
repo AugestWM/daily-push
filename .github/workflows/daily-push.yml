@@ -24,29 +24,18 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.GOLD_API_KEY }}")
           echo "$NEWS_RESPONSE" > news.json
           
-          # 调试：打印原始响应
-          echo "=== API Response ==="
-          echo "$NEWS_RESPONSE" | jq '.'
-          
-          # 检查 code 是否成功
           CODE=$(echo "$NEWS_RESPONSE" | jq -r '.code // 0')
           if [ "$CODE" != "200" ]; then
-            echo "API 返回错误，code: $CODE, msg: $(echo "$NEWS_RESPONSE" | jq -r '.msg')"
-            NEWS_FORMATTED="今日无热点新闻"
+            echo "news1=今日无热点新闻" >> $GITHUB_OUTPUT
           else
-            # 提取前5条标题
-            NEWS_LIST=$(echo "$NEWS_RESPONSE" | jq -r '.data[]?.title' | head -5)
-            if [ -z "$NEWS_LIST" ]; then
-              NEWS_FORMATTED="暂无热点新闻"
-            else
-              # 添加序号，用换行分隔
-              NEWS_FORMATTED=$(echo "$NEWS_LIST" | nl -w1 -s'. ' | awk '{printf "%s\\n", $0}' | sed 's/\\n$//')
-            fi
+            # 提取前6条新闻标题
+            for i in 1 2 3 4 5 6; do
+              TITLE=$(echo "$NEWS_RESPONSE" | jq -r ".data[$((i-1))].title // \"\"")
+              if [ -n "$TITLE" ]; then
+                echo "news$i=$TITLE" >> $GITHUB_OUTPUT
+              fi
+            done
           fi
-          
-          echo "news=$NEWS_FORMATTED" >> $GITHUB_OUTPUT
-          echo "=== NEWS_FORMATTED ==="
-          echo "$NEWS_FORMATTED"
 
       - name: Get Access Token
         id: token
@@ -55,14 +44,9 @@ jobs:
           ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token')
           echo "token=$ACCESS_TOKEN" >> $GITHUB_OUTPUT
 
-      - name: Send Template Message
+      - name: Send Gold Price Message
         run: |
           GOLD_PRICE="${{ steps.gold.outputs.gold_price }}"
-          NEWS="${{ steps.news.outputs.news }}"
-          
-          echo "=== 最终发送的内容 ==="
-          echo "金价: $GOLD_PRICE"
-          echo "新闻: $NEWS"
           
           curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
             -H "Content-Type: application/json" \
@@ -70,14 +54,133 @@ jobs:
               --arg touser "${{ secrets.WECHAT_OPENID }}" \
               --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
               --arg gold_price "$GOLD_PRICE 元/克" \
-              --arg news "$NEWS" \
               '{
                 touser: $touser,
                 template_id: $template_id,
                 data: {
-                  first: { value: "每日简报", color: "#173177" },
+                  first: { value: "每日金价", color: "#173177" },
                   keyword1: { value: $gold_price, color: "#FF0000" },
+                  keyword2: { value: " " },
+                  remark: { value: "数据来自xxAPI" }
+                }
+              }')"
+
+      - name: Send News 1
+        if: steps.news.outputs.news1 != ''
+        run: |
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg news "${{ steps.news.outputs.news1 }}" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "头条热榜 1/6", color: "#173177" },
+                  keyword1: { value: " " },
                   keyword2: { value: $news },
-                  remark: { value: "祝你生活愉快！" }
+                  remark: { value: " " }
+                }
+              }')"
+
+      - name: Send News 2
+        if: steps.news.outputs.news2 != ''
+        run: |
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg news "${{ steps.news.outputs.news2 }}" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "头条热榜 2/6", color: "#173177" },
+                  keyword1: { value: " " },
+                  keyword2: { value: $news },
+                  remark: { value: " " }
+                }
+              }')"
+
+      - name: Send News 3
+        if: steps.news.outputs.news3 != ''
+        run: |
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg news "${{ steps.news.outputs.news3 }}" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "头条热榜 3/6", color: "#173177" },
+                  keyword1: { value: " " },
+                  keyword2: { value: $news },
+                  remark: { value: " " }
+                }
+              }')"
+
+      - name: Send News 4
+        if: steps.news.outputs.news4 != ''
+        run: |
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg news "${{ steps.news.outputs.news4 }}" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "头条热榜 4/6", color: "#173177" },
+                  keyword1: { value: " " },
+                  keyword2: { value: $news },
+                  remark: { value: " " }
+                }
+              }')"
+
+      - name: Send News 5
+        if: steps.news.outputs.news5 != ''
+        run: |
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg news "${{ steps.news.outputs.news5 }}" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "头条热榜 5/6", color: "#173177" },
+                  keyword1: { value: " " },
+                  keyword2: { value: $news },
+                  remark: { value: " " }
+                }
+              }')"
+
+      - name: Send News 6
+        if: steps.news.outputs.news6 != ''
+        run: |
+          curl -s -X POST "https://api.weixin.qq.com/cgi-bin/message/template/send?access_token=${{ steps.token.outputs.token }}" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg touser "${{ secrets.WECHAT_OPENID }}" \
+              --arg template_id "${{ secrets.WECHAT_TEMPLATE_ID }}" \
+              --arg news "${{ steps.news.outputs.news6 }}" \
+              '{
+                touser: $touser,
+                template_id: $template_id,
+                data: {
+                  first: { value: "头条热榜 6/6", color: "#173177" },
+                  keyword1: { value: " " },
+                  keyword2: { value: $news },
+                  remark: { value: " " }
                 }
               }')"
